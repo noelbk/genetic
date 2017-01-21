@@ -18,5 +18,5 @@ setuptools.setup(
     install_requires=[],
     tests_require=['nose'],
     test_suite='nose.collector',
-    py_modules=['genetic', 'snake'],
+    py_modules=['genetic'],
     )

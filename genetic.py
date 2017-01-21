@@ -79,7 +79,8 @@ class GeneticSolver(object):
         parents = sorted(funcs, key=lambda f: f.err)
         self.gen_count += 1
         for i in range(1):
-            log.debug("generation[%4d]: %s%s", self.gen_count, " " * i, str(parents[i])[:60])
+            print "generation[%4d]: %s%s\r" % (self.gen_count, " " * i, str(parents[i])[:60]),
+            #log.debug("generation[%4d]: %s%s", self.gen_count, " " * i, str(parents[i])[:60])
 
         if hasattr(self, 'SURVIVOR_IDXS'):
             parents = [parents[i] for i in self.SURVIVOR_IDXS]
@@ -321,32 +322,34 @@ class FuncWithErr(object):
     def __str__(self):
         return "%.4f %s" % (self.err, str(self.func))
 
-def approx_func(arity, func):
+def approx_func(arity, func, maxgens=DEFAULT, eps=DEFAULT):
     solver = GeneticSolver()
 
     inputs = solver.randinputs(arity, 10)
     expect = list([func(*args) for args in inputs])
 
-    def fitness(tryme):
+    def fitness(test_func):
         err = 0
+
+        # sum of squares of (expect - test_func(inputs))
         for args, expected in zip(inputs, expect):
             try:
-                delta = expected - tryme(*args)
+                delta = expected - test_func(*args)
             except:
                 delta = float("inf")
             err += delta * delta
-        err *= max(tryme.child_count()-2**arity,1)
+
+        # the fatter the un-fitter!  multiply un-fitness by the number of child nodes
+        err *= max(test_func.child_count() - 2 ** arity, 1)
         return err
 
     pop = [ solver.randfunc(arity) for i in range(solver.POPULATION) ]
-    parents, funcs = solver.survival(pop, fitness)
-    log.debug("best match: %s", parents[0])
+    parents, funcs = solver.survival(pop, fitness, maxgens, eps)
+    log.debug("\nbest match: %s", parents[0])
     log.debug("\n\n")
-
-import math
+    return parents[0]
 
 def test():
-    #approx_func(1, lambda a: 5*math.exp(a*a))
     approx_func(0, lambda: math.pi * 10)
     approx_func(1, lambda a: math.sin(a))
     approx_func(1, lambda a: -a*a)
