@@ -5,26 +5,27 @@ import operator as op
 import random
 import logging
 import math
-log = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 class DEFAULT(): pass
 def isdefault(v):
     return v is DEFAULT
 
+def if_neg(a, b, c):
+    return b if a <= 0 else c
+        
 class GeneticSolver(object):
     def __init__(self):
         self.OPS = (
+            (if_neg, 3),
             (op.mul, 2),
             (op.div, 2),
             (op.add, 2),
-            (op.sub, 2),
             (min, 2),
             (max, 2),
             (op.neg, 1),
             (math.sin, 1),
             (math.exp, 1),
-            (math.cos, 1),
-            (math.tan, 1),
             )
 
         self.PROB_OP = 0.75
@@ -42,10 +43,10 @@ class GeneticSolver(object):
         self.STALE_GENS = 50
         self.REFRESH_GENS = 2*self.STALE_GENS
         self.EPSILON = 1e-3
-        self.SURVIVOR_IDXS = [0, 1, 3, 5, 8]
-        self.RANDOM_SURVIVORS = 3
+        #self.SURVIVOR_IDXS = [0, 1, 3, 5, 8]
+        #self.RANDOM_SURVIVORS = 3
         self.SURVIVORS = 5
-        self.KEEP_SURVIORS = True
+        self.KEEP_SURVIORS = 2
 
         self.gen_count = 0
 
@@ -70,6 +71,20 @@ class GeneticSolver(object):
             size = self.POPULATION
         return [FuncWithErr(self.randfunc(arity, self.RAND_MAXDEPTH)) for i in range(size)]
 
+    def start(self, maxgens=DEFAULT, eps=DEFAULT):
+        """try to generate the best survivor that matches the inputs"""
+        if isdefault(maxgens):
+            maxgens = self.MAXGENS
+        if isdefault(eps):
+            eps=self.EPSILON
+        self.maxgens = maxgens
+        self.eps = eps
+        self.gen_count = 0
+        
+    def converged(self, err=None):
+        # TODO - return True when error flattens out, not just after maxits
+        return (self.maxgens and self.gen_count > self.maxgens) or (err is not None and err < self.eps)
+
     def generation(self, funcs, survivors=DEFAULT):
         """make a new generation of functions.  Breed the rest from the top survivors"""
         if isdefault(survivors):
@@ -79,21 +94,17 @@ class GeneticSolver(object):
         parents = sorted(funcs, key=lambda f: f.err)
         self.gen_count += 1
         for i in range(1):
-            print "generation[%4d]: %s%s\r" % (self.gen_count, " " * i, str(parents[i])[:60]),
-            #log.debug("generation[%4d]: %s%s", self.gen_count, " " * i, str(parents[i])[:60])
+            LOG.debug("generation[%4d]: %s%s", self.gen_count, " " * i, str(parents[i])[:60])
 
         if hasattr(self, 'SURVIVOR_IDXS'):
-            parents = [parents[i] for i in self.SURVIVOR_IDXS]
+            parents = [parents[i] for i in self.SURVIVOR_IDXS if i < len(parents)]
             survivors = len(self.SURVIVOR_IDXS)
         else:
             if survivors < 1:
                 survivors = int(len(funcs) * survivors)
             parents = parents[:survivors]
 
-        if getattr(self, 'KEEP_SURVIORS', False):
-            nextgen = parents[:survivors]
-        else:
-            nextgen = []
+        nextgen = parents[:getattr(self, 'KEEP_SURVIORS', 0)]
 
         if hasattr(self, 'RANDOM_SURVIVORS'):
             n = self.RANDOM_SURVIVORS
@@ -115,7 +126,10 @@ class GeneticSolver(object):
                     gidx = (gidx + 1) % len(parents)
                 g = parents[gidx].func
                 for h in f.combine(g):
-                    nextgen.append(FuncWithErr(h))
+                    if len(nextgen) < size:
+                        nextgen.append(FuncWithErr(h))
+                    else:
+                        break
         return parents, nextgen
 
     def evolve(self, pop, fitness, maxgens=DEFAULT, eps=DEFAULT):
@@ -147,7 +161,7 @@ class GeneticSolver(object):
             if self.gen_count >= maxgens or parents[0].err < eps:
                 break
 
-            log.debug("got stale, refreshing...")
+            LOG.debug("got stale, refreshing...")
 
             # try evolving a random pop to see if that can shake up stale pop
             others = [FuncWithErr(initpop[0].randnew()) for i in range(size)]
@@ -322,6 +336,9 @@ class FuncWithErr(object):
     def __str__(self):
         return "%.4f %s" % (self.err, str(self.func))
 
+    def __call__(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+
 def approx_func(arity, func, maxgens=DEFAULT, eps=DEFAULT):
     solver = GeneticSolver()
 
@@ -345,8 +362,8 @@ def approx_func(arity, func, maxgens=DEFAULT, eps=DEFAULT):
 
     pop = [ solver.randfunc(arity) for i in range(solver.POPULATION) ]
     parents, funcs = solver.survival(pop, fitness, maxgens, eps)
-    log.debug("\nbest match: %s", parents[0])
-    log.debug("\n\n")
+    LOG.debug("\nbest match: %s", parents[0])
+    LOG.debug("\n\n")
     return parents[0]
 
 def test():
