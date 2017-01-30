@@ -1,15 +1,14 @@
-#! /usr/bin/env python
-# Copyright 2016 Noel Burton-Krahn <noel@burton-krahn.com>
-
 import operator as op
 import random
-import logging
 import math
-LOG = logging.getLogger(__name__)
+import logging
+import re
 
-class DEFAULT(): pass
-def isdefault(v):
-    return v is DEFAULT
+from pyparsing import OneOrMore, nestedExpr
+from genetic.util import DEFAULT, isdefault
+from genetic.funcs import GeneticOp, GeneticConst, GeneticVar, FuncWithErr
+
+LOG = logging.getLogger(__name__)
 
 def if_neg(a, b, c):
     return b if a <= 0 else c
@@ -27,6 +26,7 @@ class GeneticSolver(object):
             (math.sin, 1),
             (math.exp, 1),
             )
+        self.OPS_byname = {op.__name__: (op, op_arity) for op, op_arity in self.OPS}
 
         self.PROB_OP = 0.75
         self.PROB_VAR = 0.5
@@ -44,12 +44,48 @@ class GeneticSolver(object):
         self.REFRESH_GENS = 2*self.STALE_GENS
         self.EPSILON = 1e-3
         #self.SURVIVOR_IDXS = [0, 1, 3, 5, 8]
-        #self.RANDOM_SURVIVORS = 3
         self.SURVIVORS = 5
-        self.KEEP_SURVIORS = 2
+        self.RANDOM_SURVIVORS = 1
+        self.KEEP_SURVIORS = 1
 
         self.gen_count = 0
 
+    def parsefunc(self, arity, funcstr):
+        if funcstr[0] != '(':
+            funcstr = "(" + funcstr + ")"
+        parsed = OneOrMore(nestedExpr()).parseString(funcstr)
+        return self._parsefunc_list(parsed[0].asList(), arity)
+
+    re_var = re.compile(r'var(\d+)')
+    def _parsefunc_list(self, expr, arity):
+        if type(expr) is list:
+            op = expr[0]
+            if op in self.OPS_byname:
+                op, op_arity = self.OPS_byname[op]
+                assert len(expr)-1 == op_arity, "bad arity.  Expected %s args, got %s" % (op_arity, expr)
+                args = [self._parsefunc_list(arg, arity) for arg in expr[1:]]
+                return GeneticOp(self, arity, op, args)
+            elif len(expr) == 1:
+                return self._parsefunc_list(expr[0], arity)
+            else:
+                assert False, "unrecognized operator: %s.  expected one of %s" % (expr[0], (op for op, op_arity in self.OPS_byname))
+            
+        elif expr[0] == '"':
+            assert expr[-1] == '"', 'string constants must begin and end with "" got=[%s]' % expr
+            return GeneticConst(self, arity, expr[1:-1].encode('string_escape'))
+        
+        elif expr[0].isdigit() or expr[0] in "+-.":
+            return GeneticConst(self, arity, float(expr))
+        
+        else:
+            m = self.re_var.match(expr)
+            assert m, "unrecognized variable name=%s, expected something like var0..var%s" % (expr, arity-1)
+            idx = int(m.group(1))
+            assert 0 <= idx < arity, "variable index=%s out of bounds for arity=%s" % (idx, arity)
+            return GeneticVar(self, arity, idx)
+            
+    
+        
     def randfunc(self, arity, maxdepth=DEFAULT):
         """return a random function with arity (number of input
         arguments).  Maxdepth is the max depth of the function evaluation
@@ -189,156 +225,6 @@ class GeneticSolver(object):
         assert False, "unimplemented"
 
 
-class GeneticFunc(object):
-    """Base class for genetic functions.  Functions can be evaluated
-    with 1..arity arguments, mutated, and combined"""
-    def __init__(self, solver, arity):
-        self.solver = solver
-        self.arity = arity
-        self.children = None
-
-    @property
-    def height(self):
-        return 0
-
-    def __call__(self, *args):
-        assert false, "unimplemented"
-
-    def __str__(self):
-        assert false, "unimplemented"
-
-    def clone(self):
-        return self
-
-    def child_count(self):
-        return 1
-
-    def child_paths(self, path=()):
-        yield path
-
-    def subtree(self):
-        return GeneticFuncSubtree(self)
-
-    def randnew(self):
-        return self.solver.randfunc(self.arity)
-
-    def mutate(self, newfunc=None):
-        """return a new version of myself with a random mutation"""
-        if not newfunc:
-            #newfunc = randfunc(self.arity, random.randrange(max(2 * self.height, 1)))
-            newfunc = self.solver.randfunc(self.arity, 2)
-        return self.subtree().mutate(newfunc)
-
-    def combine(self, other):
-        """combine myself with another function.  Take a random
-        portion of myself and swap it with a random portion of other"""
-        f = self.subtree()
-        g = other.subtree()
-        return f.mutate(g.func()), g.mutate(f.func())
-
-class GeneticOp(GeneticFunc):
-    """A function with arity child sub-functions"""
-    def __init__(self, solver, arity, op, children):
-        super(GeneticOp, self).__init__(solver, arity)
-        self.op = op
-        self.children = children
-
-    def __str__(self):
-        return '(' + ' '.join((self.op.__name__,) + tuple(str(child) for child in self.children)) + ')'
-
-    def __call__(self, *args):
-        return self.op(*[child(*args) for child in self.children])
-
-    def child_count(self):
-        return 1 + sum([child.child_count() for child in self.children])
-
-    @property
-    def height(self):
-        return 1 + max([child.height for child in self.children])
-
-    def child_paths(self, path=()):
-        yield path
-        for idx in range(len(self.children)):
-            for p in self.children[idx].child_paths(path + (idx,)):
-                yield p
-
-    def subtree(self):
-        if getattr(self, 'SUBTREE_CHOOSE_CHILD', False):
-            child_path = random.choice(tuple(self.child_paths()))
-        else:
-            child_path = []
-            child = self
-            while child and child.children:
-                child_idx = random.randrange(len(child.children))
-                child_path.append(child_idx)
-                child = child.children[child_idx]
-                #if child.height == 0 or random.random() < 1/(child.height+1):
-                if child.height == 0 or random.random() < self.solver.PROB_SUBTREE:
-                    break
-        return GeneticFuncSubtree(self, child_path)
-
-    def clone(self):
-        return GeneticOp(self.solver, self.arity, self.op, [child.clone() for child in self.children])
-
-class GeneticFuncSubtree(object):
-    """A helper class to mutate and replace parts of a GenerticOp tree"""
-    def __init__(self, root, child_path=None):
-        self.root = root
-        self.child_path = child_path or []
-
-    def func(self):
-        child = self.root
-        for child_idx in self.child_path:
-            child = child.children[child_idx]
-        return child.clone()
-
-    def mutate(self, func):
-        if not self.child_path:
-            return func.clone()
-
-        newfunc = self.root.clone()
-        child = newfunc
-        for child_idx in self.child_path[:-1]:
-            child = child.children[child_idx]
-        child.children[self.child_path[-1]] = func
-        return newfunc
-
-class GeneticVar(GeneticFunc):
-    """returns the value of one argument"""
-    def __init__(self, solver, arity, idx):
-        super(GeneticVar, self).__init__(solver, arity)
-        self.idx = idx
-
-    def __str__(self):
-        return 'var%d' % self.idx
-
-    def __call__(self, *args):
-        return args[self.idx]
-
-class GeneticConst(GeneticFunc):
-    """return a constant"""
-    def __init__(self, solver, arity, const):
-        super(GeneticConst, self).__init__(solver, arity)
-        self.const = const
-
-    def __str__(self):
-        return str(self.const)
-
-    def __call__(self, *args):
-        return self.const
-
-class FuncWithErr(object):
-    """helper to group functions and fitness"""
-    def __init__(self, func):
-        self.func = func
-        self.err = 0
-
-    def __str__(self):
-        return "%.4f %s" % (self.err, str(self.func))
-
-    def __call__(self, *args, **kwargs):
-        return self.func(*args, **kwargs)
-
 def approx_func(arity, func, maxgens=DEFAULT, eps=DEFAULT):
     solver = GeneticSolver()
 
@@ -366,16 +252,3 @@ def approx_func(arity, func, maxgens=DEFAULT, eps=DEFAULT):
     LOG.debug("\n\n")
     return parents[0]
 
-def test():
-    approx_func(0, lambda: math.pi * 10)
-    approx_func(1, lambda a: math.sin(a))
-    approx_func(1, lambda a: -a*a)
-    approx_func(2, lambda a, b: max(a-b, a*b))
-    approx_func(3, lambda a, b, c: a*a - min(b,c))
-    approx_func(4, lambda a, b, c, d: a*b + d*d - c*a*b)
-    approx_func(2, lambda a, b: math.sin(a) + math.cos(min(a,b)))
-
-
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-    test()

@@ -2,10 +2,11 @@
 # Copyright 2016 Noel Burton-Krahn <noel@burton-krahn.com>
 
 import unittest
-import genetic
 import random
-
 import logging
+
+import genetic
+
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
@@ -16,9 +17,9 @@ class TestGenetic(unittest.TestCase):
         self.solver = genetic.GeneticSolver()
 
     def test_child_paths(self):
-        random.seed(4)
-        f = self.solver.randfunc(4, 4)
-        self.assertEqual('(div (div (min 2.12130082004 (max var0 var0)) 2.45321877362) var1)', str(f))
+        funcstr = '(div (div (min 2.12130082004 (max var0 var0)) 2.45321877362) var1)'
+        f = self.solver.parsefunc(4, funcstr)
+        self.assertEqual(funcstr, str(f))
         self.assertEquals(
             ((),
              (0,),
@@ -32,12 +33,21 @@ class TestGenetic(unittest.TestCase):
             tuple(f.child_paths()))
 
     def test_randfunc(self):
+        def addfunc(vari):
+            if vari == 0:
+                return "0.0"
+            else:
+                return "(add var%s %s)" % (vari-1, addfunc(vari-1))
+            
+        
         for arity in range(10):
-            f = self.solver.randfunc(arity)
+            funcstr = addfunc(arity)
+            f = self.solver.parsefunc(arity, funcstr)
             self.assertEqual(arity, f.arity)
+            self.assertEqual(funcstr, str(f))
             inputs = self.solver.randinputs(arity, 10)
             for args in inputs:
-                f(*args)
+                self.assertEqual(sum(args), f(*args))
 
     def test_mutate(self):
         f1 = genetic.GeneticConst(self.solver, 3, 1)
