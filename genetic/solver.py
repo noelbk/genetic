@@ -12,7 +12,16 @@ LOG = logging.getLogger(__name__)
 
 def if_neg(a, b, c):
     return b if a <= 0 else c
-        
+
+def sin2pi(t):
+    return math.sin(2*math.pi * t)
+
+def cos2pi(t):
+    return math.cos(2*math.pi * t)
+
+def square(t):
+    return t * t
+
 class GeneticSolver(object):
     def __init__(self):
         self.OPS = (
@@ -23,10 +32,14 @@ class GeneticSolver(object):
             (min, 2),
             (max, 2),
             (op.neg, 1),
-            (math.sin, 1),
+            (sin2pi, 1),
+            (cos2pi, 1),
+            (square, 1),
             (math.exp, 1),
+            (math.log, 1),
             )
         self.OPS_byname = {op.__name__: (op, op_arity) for op, op_arity in self.OPS}
+        self.OPS_byname["sin"] = (math.sin, 1)
 
         self.PROB_OP = 0.75
         self.PROB_VAR = 0.5

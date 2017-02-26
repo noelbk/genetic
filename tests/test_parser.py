@@ -4,6 +4,10 @@
 import unittest
 import genetic
 import random
+import sys
+import math
+
+epsilon = 1e-10 # sys.float_info.epsilon
 
 import logging
 log = logging.getLogger(__name__)
@@ -29,3 +33,19 @@ class TestParser(unittest.TestCase):
         args = (1,2,3,4)
         eps = abs(f(*args) - parsed(*args))
         self.assertTrue(eps < 1e-6, "Error too big! err=%s parsed=%s" % (eps, parsed))
+
+    def test_parser_sin(self):
+        funcstr = "(sin var0)"
+        parsed = self.solver.parsefunc(2, funcstr)
+        self.assertEqual(funcstr, str(parsed))
+        self.assertTrue(abs(parsed(1) - math.sin(1)) < epsilon)
+
+    def test_parser_sin2pi(self):
+        funcstr = "(sin2pi var0)"
+        parsed = self.solver.parsefunc(1, funcstr)
+        self.assertEqual(funcstr, str(parsed))
+        self.assertTrue(abs(parsed(0) - 0) < epsilon)
+        self.assertTrue(abs(parsed(0.25) - 1) < epsilon)
+        self.assertTrue(abs(parsed(0.5) - 0) < epsilon)
+        self.assertTrue(abs(parsed(0.75) - -1) < epsilon)
+        self.assertTrue(abs(parsed(1.0) - 0) < epsilon, "parsed(1.0)=%s" % parsed(1.0))
