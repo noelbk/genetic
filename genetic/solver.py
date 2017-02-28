@@ -22,6 +22,9 @@ def cos2pi(t):
 def square(t):
     return t * t
 
+def sigmoid(t):
+    return t / math.sqrt(1+t*t)
+
 class GeneticSolver(object):
     def __init__(self):
         self.OPS = (
@@ -30,16 +33,19 @@ class GeneticSolver(object):
             (op.div, 2),
             (op.add, 2),
             (min, 2),
-            (max, 2),
             (op.neg, 1),
             (sin2pi, 1),
-            (cos2pi, 1),
-            (square, 1),
             (math.exp, 1),
             (math.log, 1),
+            (sigmoid, 1)
             )
         self.OPS_byname = {op.__name__: (op, op_arity) for op, op_arity in self.OPS}
+        # for backwards compatibility
         self.OPS_byname["sin"] = (math.sin, 1)
+        self.OPS_byname["cos"] = (math.cos, 1)
+        self.OPS_byname["max"] = (max, 2)
+        self.OPS_byname["cos2pi"] = (cos2pi, 1)
+        self.OPS_byname["square"] = (square, 1)
 
         self.PROB_OP = 0.75
         self.PROB_VAR = 0.5
@@ -72,10 +78,10 @@ class GeneticSolver(object):
     re_var = re.compile(r'var(\d+)')
     def _parsefunc_list(self, expr, arity):
         if type(expr) is list:
-            op = expr[0]
-            if op in self.OPS_byname:
-                op, op_arity = self.OPS_byname[op]
-                assert len(expr)-1 == op_arity, "bad arity.  Expected %s args, got %s" % (op_arity, expr)
+            op_name = expr[0]
+            if op_name in self.OPS_byname:
+                op, op_arity = self.OPS_byname[op_name]
+                assert len(expr)-1 == op_arity, "bad arity for op=%s.  Expected %s args, got %s" % (op_name, op_arity, expr)
                 args = [self._parsefunc_list(arg, arity) for arg in expr[1:]]
                 return GeneticOp(self, arity, op, args)
             elif len(expr) == 1:

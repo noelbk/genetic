@@ -37,14 +37,14 @@ class GeneticFunc(object):
         return GeneticFuncSubtree(self)
 
     def randnew(self):
-        return self.solver.randfunc(self.arity)
+        return self.solver.randfunc(self.arity).simplify()
 
     def mutate(self, newfunc=None):
         """return a new version of myself with a random mutation"""
         if not newfunc:
             #newfunc = randfunc(self.arity, random.randrange(max(2 * self.height, 1)))
             newfunc = self.solver.randfunc(self.arity, 2)
-        return self.subtree().mutate(newfunc)
+        return self.subtree().mutate(newfunc).simplify()
 
     def combine(self, other):
         """combine myself with another function.  Take a random
@@ -52,6 +52,13 @@ class GeneticFunc(object):
         f = self.subtree()
         g = other.subtree()
         return f.mutate(g.func()), g.mutate(f.func())
+
+    def simplify(self):
+        return self
+
+    def is_constant(self):
+        return False
+
 
 class GeneticOp(GeneticFunc):
     """A function with arity child sub-functions"""
@@ -68,6 +75,28 @@ class GeneticOp(GeneticFunc):
 
     def child_count(self):
         return 1 + sum([child.child_count() for child in self.children])
+
+    def is_constant(self):
+        return all(child.is_constant() for child in self.children)
+    
+    def simplify(self):
+        is_constant = True
+        simplified = []
+
+        for child in self.children:
+            child = child.simplify()
+            if not child.is_constant():
+                is_constant = False
+            simplified.append(child)
+        self.children = simplified
+        if is_constant:
+            try: 
+                const = self.op(*[child() for child in self.children])
+                return GeneticConst(self.solver, self.arity, const)
+            except ValueError:
+                return self
+        else:
+            return self
 
     @property
     def height(self):
@@ -143,6 +172,9 @@ class GeneticConst(GeneticFunc):
 
     def __call__(self, *args):
         return self.const
+
+    def is_constant(self):
+        return True
 
 class FuncWithErr(object):
     """helper to group functions and fitness"""
