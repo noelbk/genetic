@@ -36,8 +36,6 @@ class GeneticSolver(object):
             (op.neg, 1),
             (sin2pi, 1),
             (math.exp, 1),
-            (math.log, 1),
-            (sigmoid, 1)
             )
         self.OPS_byname = {op.__name__: (op, op_arity) for op, op_arity in self.OPS}
         # for backwards compatibility
@@ -46,6 +44,8 @@ class GeneticSolver(object):
         self.OPS_byname["max"] = (max, 2)
         self.OPS_byname["cos2pi"] = (cos2pi, 1)
         self.OPS_byname["square"] = (square, 1)
+        self.OPS_byname["log"] = (math.log, 1)
+        self.OPS_byname["sigmoid"] = (sigmoid, 1)
 
         self.PROB_OP = 0.75
         self.PROB_VAR = 0.5
